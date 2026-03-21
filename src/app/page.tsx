@@ -5,7 +5,7 @@ import { RefreshCw, TrendingUp, Wallet, Home, Bitcoin } from 'lucide-react'
 import type { PortfolioData, DashboardSummary } from '@/types'
 import { calcSummary } from '@/lib/calc'
 import { sampleData } from '@/lib/sampleData'
-import AlertPanel from '@/components/AlertPanel'
+import ToastNotifications from '@/components/ToastNotifications'
 import SummaryCards from '@/components/SummaryCards'
 import StockTable from '@/components/StockTable'
 import CashTable from '@/components/CashTable'
@@ -69,6 +69,7 @@ export default function DashboardPage() {
   const [isUpdating, setIsUpdating] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [showSectorChart, setShowSectorChart] = useState(true)
+  const [updateKey, setUpdateKey] = useState(0)
   const [updateSource, setUpdateSource] = useState<'yfinance' | 'mock' | null>(
     null
   )
@@ -134,6 +135,7 @@ export default function DashboardPage() {
       }))
 
       setUpdateSource(data.source)
+      setUpdateKey((k) => k + 1)
     } catch (err) {
       console.error('Price update failed:', err)
     } finally {
@@ -239,8 +241,8 @@ export default function DashboardPage() {
 
       {/* Main Content */}
       <main className="mx-auto max-w-screen-xl px-4 py-6 sm:px-6">
-        {/* Alerts */}
-        <AlertPanel alerts={summary.alerts} />
+        {/* Toast Notifications */}
+        <ToastNotifications alerts={summary.alerts} updateKey={updateKey} />
 
         {/* Summary Cards */}
         <SummaryCards summary={summary} />

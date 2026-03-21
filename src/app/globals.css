@@ -48,6 +48,12 @@ th {
   text-align: left;
 }
 
+/* Toast progress bar */
+@keyframes toast-shrink {
+  from { width: 100%; }
+  to   { width: 0%; }
+}
+
 /* Input focus ring */
 input:focus,
 select:focus,
