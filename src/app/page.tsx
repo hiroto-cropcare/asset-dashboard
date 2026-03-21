@@ -17,12 +17,24 @@ const STORAGE_KEY = 'asset_dashboard_v1'
 
 type ActiveTab = 'stock' | 'cash' | 'realestate' | 'crypto'
 
+function isValidPortfolioData(obj: unknown): obj is PortfolioData {
+  if (!obj || typeof obj !== 'object') return false
+  const d = obj as Record<string, unknown>
+  return (
+    Array.isArray(d.stocks) &&
+    Array.isArray(d.cash) &&
+    Array.isArray(d.realestate) &&
+    Array.isArray(d.cryptos)
+  )
+}
+
 function loadFromStorage(): PortfolioData | null {
   try {
     if (typeof window === 'undefined') return null
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
-    return JSON.parse(raw) as PortfolioData
+    const parsed: unknown = JSON.parse(raw)
+    return isValidPortfolioData(parsed) ? parsed : null
   } catch {
     return null
   }

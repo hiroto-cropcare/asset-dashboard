@@ -60,13 +60,20 @@ export default function StockTable({ stocks, onAdd, onDelete }: StockTableProps)
     return null
   }
 
+  const CODE_RE = /^[A-Z0-9.\-]{1,20}$/
+
   function validate(): boolean {
     const e: Partial<typeof defaultForm> = {}
-    if (!form.code.trim()) e.code = '必須'
+    const code = form.code.trim().toUpperCase()
+    if (!code) e.code = '必須'
+    else if (!CODE_RE.test(code)) e.code = '英数字・ . ・- のみ（20文字以内）'
     if (!form.name.trim()) e.name = '必須'
-    if (!form.shares || isNaN(Number(form.shares)) || Number(form.shares) <= 0)
-      e.shares = '正の数'
-    if (!form.buyPrice || isNaN(Number(form.buyPrice)) || Number(form.buyPrice) <= 0)
+    else if (form.name.trim().length > 50) e.name = '50文字以内'
+    const shares = Number(form.shares)
+    if (!form.shares || !isFinite(shares) || shares <= 0 || shares > 1e9)
+      e.shares = '1〜1,000,000,000'
+    const buyPrice = Number(form.buyPrice)
+    if (!form.buyPrice || !isFinite(buyPrice) || buyPrice <= 0 || buyPrice > 1e12)
       e.buyPrice = '正の数'
     setErrors(e)
     return Object.keys(e).length === 0

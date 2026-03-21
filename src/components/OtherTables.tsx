@@ -63,17 +63,11 @@ function RealEstateTable({
     const e: Partial<typeof defaultREForm> = {}
     if (!form.name.trim()) e.name = '必須'
     if (!form.location.trim()) e.location = '必須'
-    if (
-      !form.purchasePrice ||
-      isNaN(Number(form.purchasePrice)) ||
-      Number(form.purchasePrice) <= 0
-    )
+    const purchasePrice = Number(form.purchasePrice)
+    if (!form.purchasePrice || !isFinite(purchasePrice) || purchasePrice <= 0 || purchasePrice > 1e15)
       e.purchasePrice = '正の数'
-    if (
-      !form.currentValue ||
-      isNaN(Number(form.currentValue)) ||
-      Number(form.currentValue) <= 0
-    )
+    const currentValue = Number(form.currentValue)
+    if (!form.currentValue || !isFinite(currentValue) || currentValue <= 0 || currentValue > 1e15)
       e.currentValue = '正の数'
     setErrors(e)
     return Object.keys(e).length === 0
@@ -352,15 +346,16 @@ function CryptoTable({
 
   function validate(): boolean {
     const e: Partial<typeof defaultCryptoForm> = {}
-    if (!form.symbol.trim()) e.symbol = '必須'
+    const CRYPTO_SYMBOL_RE = /^[A-Z0-9\-]{1,20}$/
+    const symbol = form.symbol.trim().toUpperCase()
+    if (!symbol) e.symbol = '必須'
+    else if (!CRYPTO_SYMBOL_RE.test(symbol)) e.symbol = '英数字・- のみ（20文字以内）'
     if (!form.name.trim()) e.name = '必須'
-    if (!form.amount || isNaN(Number(form.amount)) || Number(form.amount) <= 0)
+    const amount = Number(form.amount)
+    if (!form.amount || !isFinite(amount) || amount <= 0 || amount > 1e15)
       e.amount = '正の数'
-    if (
-      !form.buyPrice ||
-      isNaN(Number(form.buyPrice)) ||
-      Number(form.buyPrice) <= 0
-    )
+    const buyPrice = Number(form.buyPrice)
+    if (!form.buyPrice || !isFinite(buyPrice) || buyPrice <= 0 || buyPrice > 1e15)
       e.buyPrice = '正の数'
     setErrors(e)
     return Object.keys(e).length === 0

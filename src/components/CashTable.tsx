@@ -32,7 +32,8 @@ export default function CashTable({ cash, onAdd, onDelete }: CashTableProps) {
   function validate(): boolean {
     const e: Partial<typeof defaultForm> = {}
     if (!form.name.trim()) e.name = '必須'
-    if (!form.amount || isNaN(Number(form.amount)) || Number(form.amount) < 0)
+    const amount = Number(form.amount)
+    if (!form.amount || !isFinite(amount) || amount < 0 || amount > 1e15)
       e.amount = '0以上の数値'
     setErrors(e)
     return Object.keys(e).length === 0
