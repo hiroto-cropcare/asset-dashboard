@@ -4,6 +4,7 @@ import type {
   Alert,
   StockHolding,
   CryptoHolding,
+  BondHolding,
 } from '@/types'
 
 export const USD_JPY = 155
@@ -55,6 +56,17 @@ function calcStockAlerts(stock: StockHolding): Alert[] {
   return alerts
 }
 
+function calcBondTotal(bonds: BondHolding[]): { value: number; cost: number } {
+  let value = 0
+  let cost = 0
+  for (const b of bonds) {
+    const multiplier = b.faceValue * b.quantity / 100
+    value += multiplier * b.currentPrice
+    cost  += multiplier * b.purchasePrice
+  }
+  return { value, cost }
+}
+
 function calcCryptoAlerts(crypto: CryptoHolding): Alert[] {
   const alerts: Alert[] = []
   if (crypto.currentPrice === null) return alerts
@@ -97,6 +109,11 @@ export function calcSummary(data: PortfolioData): DashboardSummary {
     bySector[sectorKey] = (bySector[sectorKey] ?? 0) + valueJPY
     alerts.push(...calcStockAlerts(s))
   }
+
+  // --- Bond totals (included in stock・bond category) ---
+  const { value: bondValue, cost: bondCost } = calcBondTotal(data.bonds ?? [])
+  stockTotal += bondValue
+  stockCost  += bondCost
 
   // --- Cash totals ---
   let cashTotal = 0

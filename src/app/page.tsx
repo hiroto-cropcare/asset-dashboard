@@ -11,7 +11,8 @@ import StockTable from '@/components/StockTable'
 import CashTable from '@/components/CashTable'
 import OtherTables from '@/components/OtherTables'
 import SectorChart from '@/components/SectorChart'
-import type { StockHolding, CashHolding, RealEstateHolding, CryptoHolding } from '@/types'
+import BondTable from '@/components/BondTable'
+import type { StockHolding, CashHolding, RealEstateHolding, CryptoHolding, BondHolding } from '@/types'
 
 const STORAGE_KEY = 'asset_dashboard_v1'
 
@@ -24,7 +25,8 @@ function isValidPortfolioData(obj: unknown): obj is PortfolioData {
     Array.isArray(d.stocks) &&
     Array.isArray(d.cash) &&
     Array.isArray(d.realestate) &&
-    Array.isArray(d.cryptos)
+    Array.isArray(d.cryptos) &&
+    Array.isArray(d.bonds ?? [])
   )
 }
 
@@ -54,7 +56,7 @@ const TAB_CONFIG: {
   label: string
   icon: React.ElementType
 }[] = [
-  { id: 'stock', label: '株式', icon: TrendingUp },
+  { id: 'stock', label: '株式・債券', icon: TrendingUp },
   { id: 'cash', label: '現金・預金', icon: Wallet },
   { id: 'realestate', label: '不動産', icon: Home },
   { id: 'crypto', label: '暗号資産', icon: Bitcoin },
@@ -78,8 +80,9 @@ export default function DashboardPage() {
   useEffect(() => {
     const saved = loadFromStorage()
     if (saved) {
-      setPortfolio(saved)
-      setSummary(calcSummary(saved))
+      const migrated = { ...saved, bonds: saved.bonds ?? [] } // bonds がない旧データを移行
+      setPortfolio(migrated)
+      setSummary(calcSummary(migrated))
     }
     setLoaded(true)
   }, [])
@@ -154,6 +157,14 @@ export default function DashboardPage() {
       ...prev,
       stocks: prev.stocks.filter((s) => s.id !== id),
     }))
+  }
+
+  function handleAddBond(b: BondHolding) {
+    setPortfolio((prev) => ({ ...prev, bonds: [...(prev.bonds ?? []), b] }))
+  }
+
+  function handleDeleteBond(id: string) {
+    setPortfolio((prev) => ({ ...prev, bonds: (prev.bonds ?? []).filter((b) => b.id !== id) }))
   }
 
   function handleAddCash(c: CashHolding) {
@@ -287,6 +298,11 @@ export default function DashboardPage() {
                 stocks={portfolio.stocks}
                 onAdd={handleAddStock}
                 onDelete={handleDeleteStock}
+              />
+              <BondTable
+                bonds={portfolio.bonds ?? []}
+                onAdd={handleAddBond}
+                onDelete={handleDeleteBond}
               />
             </>
           )}

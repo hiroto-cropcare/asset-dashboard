@@ -45,6 +45,22 @@ export const sampleData: PortfolioData = {
       sector: '情報技術',
     },
   ],
+  bonds: [
+    {
+      id: 'bond-1',
+      category: 'bond' as const,
+      name: '利付国債10年',
+      issuer: '日本国',
+      bondType: '国債' as const,
+      faceValue: 1000000,
+      quantity: 1,
+      couponRate: 0.8,
+      purchasePrice: 99.5,
+      currentPrice: 99.8,
+      maturityDate: '2034-03-20',
+      currency: 'JPY' as const,
+    },
+  ],
   cash: [
     {
       id: 'cash-1',

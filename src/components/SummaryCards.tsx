@@ -8,7 +8,7 @@ interface SummaryCardsProps {
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
-  stock: '株式',
+  stock: '株式・債券',
   cash: '現金・預金',
   realestate: '不動産',
   crypto: '暗号資産',
