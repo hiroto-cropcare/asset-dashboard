@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Trash2, PlusCircle, ChevronDown, ChevronUp } from 'lucide-react'
+import { Trash2, PlusCircle, ChevronDown, ChevronUp, Search, Loader2 } from 'lucide-react'
 import type { StockHolding } from '@/types'
 import { USD_JPY } from '@/lib/calc'
 import { SECTOR_LIST, SECTOR_COLORS } from '@/components/SectorChart'
@@ -39,6 +39,42 @@ export default function StockTable({ stocks, onAdd, onDelete }: StockTableProps)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(defaultForm)
   const [errors, setErrors] = useState<Partial<typeof defaultForm>>({})
+  const [isFetching, setIsFetching] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
+
+  async function handleLookup() {
+    const code = form.code.trim().toUpperCase()
+    if (!code) return
+    setIsFetching(true)
+    setFetchError(null)
+    try {
+      const res = await fetch(`/api/stockinfo?symbol=${encodeURIComponent(code)}`)
+      const data = await res.json() as {
+        name?: string
+        market?: 'JP' | 'US'
+        sector?: string | null
+        currentPrice?: number | null
+        annualDividend?: number
+        error?: string
+      }
+      if (!res.ok || data.error) {
+        setFetchError('銘柄情報を取得できませんでした')
+        return
+      }
+      setForm((prev) => ({
+        ...prev,
+        name: data.name ?? prev.name,
+        market: data.market ?? prev.market,
+        sector: data.sector ?? prev.sector,
+        annualDividend: data.annualDividend != null ? String(data.annualDividend) : prev.annualDividend,
+        alertYieldBelow: data.market === 'US' ? '1' : '3',
+      }))
+    } catch {
+      setFetchError('通信エラーが発生しました')
+    } finally {
+      setIsFetching(false)
+    }
+  }
 
   function getPnL(s: StockHolding): number | null {
     if (s.currentPrice === null) return null
@@ -262,13 +298,19 @@ export default function StockTable({ stocks, onAdd, onDelete }: StockTableProps)
       {showForm && (
         <div className="mt-4 rounded-xl border border-panel bg-surface p-5">
           <h3 className="mb-4 text-sm font-semibold text-text-primary">新規銘柄追加</h3>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
+
+          {/* Code lookup row */}
+          <div className="mb-4 flex items-end gap-2">
+            <div className="w-48">
               <label className="mb-1 block text-xs text-text-muted">コード *</label>
               <input
                 type="text"
                 value={form.code}
-                onChange={(e) => setForm({ ...form, code: e.target.value })}
+                onChange={(e) => {
+                  setForm({ ...form, code: e.target.value })
+                  setFetchError(null)
+                }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleLookup() }}
                 placeholder="7203.T"
                 className={`w-full rounded-lg border bg-ink px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:border-accent focus:ring-1 focus:ring-accent ${
                   errors.code ? 'border-danger' : 'border-panel'
@@ -278,9 +320,25 @@ export default function StockTable({ stocks, onAdd, onDelete }: StockTableProps)
                 <p className="mt-0.5 text-xs text-danger">{errors.code}</p>
               )}
             </div>
+            <button
+              type="button"
+              onClick={handleLookup}
+              disabled={isFetching || !form.code.trim()}
+              className="flex items-center gap-1.5 rounded-lg border border-panel bg-ink px-4 py-2 text-sm text-text-muted transition-colors hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isFetching
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <Search className="h-4 w-4" />}
+              {isFetching ? '取得中...' : '銘柄を検索'}
+            </button>
+            {fetchError && (
+              <p className="text-xs text-danger">{fetchError}</p>
+            )}
+          </div>
 
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <label className="mb-1 block text-xs text-text-muted">銘柄名 *</label>
+              <label className="mb-1 block text-xs text-text-muted">銘柄名 *（自動入力）</label>
               <input
                 type="text"
                 value={form.name}
@@ -296,7 +354,7 @@ export default function StockTable({ stocks, onAdd, onDelete }: StockTableProps)
             </div>
 
             <div>
-              <label className="mb-1 block text-xs text-text-muted">市場</label>
+              <label className="mb-1 block text-xs text-text-muted">市場（自動入力）</label>
               <select
                 value={form.market}
                 onChange={(e) =>
