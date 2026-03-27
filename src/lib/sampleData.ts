@@ -118,4 +118,5 @@ export const sampleData: PortfolioData = {
       alertDropPct: 20,
     },
   ],
+  dividends: [],
 }

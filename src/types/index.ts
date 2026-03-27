@@ -88,10 +88,23 @@ export interface DashboardSummary {
   lastUpdated: string
 }
 
+export interface DividendRecord {
+  id: string
+  stockCode: string
+  stockName: string
+  receivedDate: string   // YYYY-MM-DD
+  amountPerShare: number // 1株あたり配当金
+  shares: number
+  totalAmount: number    // 合計受取額
+  currency: 'JPY' | 'USD'
+  note?: string
+}
+
 export interface PortfolioData {
   stocks: StockHolding[]
   bonds: BondHolding[]
   cash: CashHolding[]
   realestate: RealEstateHolding[]
   cryptos: CryptoHolding[]
+  dividends: DividendRecord[]
 }

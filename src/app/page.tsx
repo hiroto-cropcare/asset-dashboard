@@ -1,10 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, TrendingUp, Wallet, Home, Bitcoin } from 'lucide-react'
+import type { User } from '@supabase/supabase-js'
+import { RefreshCw, TrendingUp, Wallet, Home, Bitcoin, DollarSign } from 'lucide-react'
 import type { PortfolioData, DashboardSummary } from '@/types'
 import { calcSummary } from '@/lib/calc'
 import { sampleData } from '@/lib/sampleData'
+import { supabase } from '@/lib/supabase'
+import { loadPortfolio, savePortfolio } from '@/lib/db'
 import ToastNotifications from '@/components/ToastNotifications'
 import SummaryCards from '@/components/SummaryCards'
 import StockTable from '@/components/StockTable'
@@ -12,44 +15,11 @@ import CashTable from '@/components/CashTable'
 import OtherTables from '@/components/OtherTables'
 import SectorChart from '@/components/SectorChart'
 import BondTable from '@/components/BondTable'
-import type { StockHolding, CashHolding, RealEstateHolding, CryptoHolding, BondHolding } from '@/types'
+import AuthBar from '@/components/AuthBar'
+import DividendTable from '@/components/DividendTable'
+import type { StockHolding, CashHolding, RealEstateHolding, CryptoHolding, BondHolding, DividendRecord } from '@/types'
 
-const STORAGE_KEY = 'asset_dashboard_v1'
-
-type ActiveTab = 'stock' | 'cash' | 'realestate' | 'crypto'
-
-function isValidPortfolioData(obj: unknown): obj is PortfolioData {
-  if (!obj || typeof obj !== 'object') return false
-  const d = obj as Record<string, unknown>
-  return (
-    Array.isArray(d.stocks) &&
-    Array.isArray(d.cash) &&
-    Array.isArray(d.realestate) &&
-    Array.isArray(d.cryptos) &&
-    Array.isArray(d.bonds ?? [])
-  )
-}
-
-function loadFromStorage(): PortfolioData | null {
-  try {
-    if (typeof window === 'undefined') return null
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
-    const parsed: unknown = JSON.parse(raw)
-    return isValidPortfolioData(parsed) ? parsed : null
-  } catch {
-    return null
-  }
-}
-
-function saveToStorage(data: PortfolioData): void {
-  try {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-  } catch {
-    // ignore
-  }
-}
+type ActiveTab = 'stock' | 'cash' | 'realestate' | 'crypto' | 'dividend'
 
 const TAB_CONFIG: {
   id: ActiveTab
@@ -60,6 +30,7 @@ const TAB_CONFIG: {
   { id: 'cash', label: '現金・預金', icon: Wallet },
   { id: 'realestate', label: '不動産', icon: Home },
   { id: 'crypto', label: '暗号資産', icon: Bitcoin },
+  { id: 'dividend', label: '配当金', icon: DollarSign },
 ]
 
 export default function DashboardPage() {
@@ -72,25 +43,57 @@ export default function DashboardPage() {
   const [loaded, setLoaded] = useState(false)
   const [showSectorChart, setShowSectorChart] = useState(true)
   const [updateKey, setUpdateKey] = useState(0)
-  const [updateSource, setUpdateSource] = useState<'yfinance' | 'mock' | null>(
-    null
-  )
+  const [updateSource, setUpdateSource] = useState<'yfinance' | 'mock' | null>(null)
+  const [user, setUser] = useState<User | null>(null)
 
-  // Load from localStorage on mount
+  // 初期化: 匿名ログイン → データ読み込み
   useEffect(() => {
-    const saved = loadFromStorage()
-    if (saved) {
-      const migrated = { ...saved, bonds: saved.bonds ?? [] } // bonds がない旧データを移行
-      setPortfolio(migrated)
-      setSummary(calcSummary(migrated))
+    async function init() {
+      try {
+        // 既存セッション確認
+        const { data: { session } } = await supabase.auth.getSession()
+        let currentUser = session?.user ?? null
+
+        // セッションなければ匿名ログイン
+        if (!currentUser) {
+          const { data, error } = await supabase.auth.signInAnonymously()
+          if (error) {
+            console.warn('匿名ログイン失敗（localStorageで続行）:', error.message)
+          } else {
+            currentUser = data.user ?? null
+          }
+        }
+
+        setUser(currentUser)
+
+        // ポートフォリオ読み込み
+        const saved = await loadPortfolio()
+        if (saved) {
+          const migrated = { ...saved, bonds: saved.bonds ?? [], dividends: saved.dividends ?? [] }
+          setPortfolio(migrated)
+          setSummary(calcSummary(migrated))
+        }
+      } catch (err) {
+        console.error('初期化エラー:', err)
+      } finally {
+        setLoaded(true)
+      }
     }
-    setLoaded(true)
+
+    init()
+
+    // 認証状態の変化を監視（メール確認後など）
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+
+    return () => subscription.unsubscribe()
   }, [])
 
-  // Save to localStorage on every portfolio change (after initial load)
+  // ポートフォリオ変更時に保存
   useEffect(() => {
     if (!loaded) return
-    saveToStorage(portfolio)
+    savePortfolio(portfolio)
     setSummary(calcSummary(portfolio))
   }, [portfolio, loaded])
 
@@ -203,6 +206,17 @@ export default function DashboardPage() {
     }))
   }
 
+  function handleAddDividend(d: DividendRecord) {
+    setPortfolio((prev) => ({ ...prev, dividends: [...(prev.dividends ?? []), d] }))
+  }
+
+  function handleDeleteDividend(id: string) {
+    setPortfolio((prev) => ({
+      ...prev,
+      dividends: (prev.dividends ?? []).filter((d) => d.id !== id),
+    }))
+  }
+
   if (!loaded) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-ink">
@@ -236,6 +250,7 @@ export default function DashboardPage() {
                   : '※ モックデータ'}
               </span>
             )}
+            <AuthBar user={user} onUserChange={setUser} />
             <button
               onClick={handleUpdatePrices}
               disabled={isUpdating}
@@ -326,12 +341,22 @@ export default function DashboardPage() {
               onDeleteCrypto={handleDeleteCrypto}
             />
           )}
+
+          {activeTab === 'dividend' && (
+            <DividendTable
+              dividends={portfolio.dividends ?? []}
+              stocks={portfolio.stocks}
+              bonds={portfolio.bonds ?? []}
+              onAdd={handleAddDividend}
+              onDelete={handleDeleteDividend}
+            />
+          )}
         </div>
       </main>
 
       {/* Footer */}
       <footer className="mt-12 border-t border-panel py-4 text-center text-xs text-text-muted">
-        Asset Dashboard — データはローカルに保存されます
+        Asset Dashboard — {user && !user.is_anonymous ? `${user.email} でログイン中` : 'データはクラウドに同期されます'}
       </footer>
     </div>
   )
