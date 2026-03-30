@@ -43,7 +43,7 @@ export default function DashboardPage() {
   const [loaded, setLoaded] = useState(false)
   const [showSectorChart, setShowSectorChart] = useState(true)
   const [updateKey, setUpdateKey] = useState(0)
-  const [updateSource, setUpdateSource] = useState<'alphavantage' | 'yfinance' | 'mock' | null>(null)
+  const [updateSource, setUpdateSource] = useState<'twelvedata' | 'none' | null>(null)
   const [user, setUser] = useState<User | null>(null)
 
   // 初期化: 匿名ログイン → データ読み込み
@@ -121,7 +121,7 @@ export default function DashboardPage() {
       const res = await fetch(`/api/prices?${params.toString()}`)
       const data = await res.json() as {
         prices: Record<string, number | null>
-        source: 'alphavantage' | 'yfinance' | 'mock'
+        source: 'twelvedata' | 'none'
       }
 
       const now = new Date().toISOString()
@@ -243,14 +243,9 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-center gap-3">
             {updateSource && (
-              <span
-                className={`text-xs ${
-                  updateSource === 'mock' ? 'text-text-muted' : 'text-accent'
-                }`}
-              >
-                {updateSource === 'alphavantage' && '✓ Alpha Vantage から取得'}
-                {updateSource === 'yfinance' && '✓ yfinance から取得'}
-                {updateSource === 'mock' && '※ モックデータ'}
+              <span className={`text-xs ${updateSource === 'none' ? 'text-text-muted' : 'text-accent'}`}>
+                {updateSource === 'twelvedata' && '✓ Twelve Data から取得'}
+                {updateSource === 'none' && '※ 取得できませんでした'}
               </span>
             )}
             <AuthBar user={user} onUserChange={setUser} />

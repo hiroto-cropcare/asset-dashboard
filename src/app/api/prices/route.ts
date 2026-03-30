@@ -1,25 +1,52 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { SYMBOL_RE } from '@/lib/symbols'
+import { SYMBOL_RE, toTwelvedataSymbol, detectMarket } from '@/lib/symbols'
 
-const AV_API_KEY = process.env.NEXT_ALPHAVANTAGE_API_KEY
-const AV_BASE = 'https://www.alphavantage.co/query'
+const TD_API_KEY = process.env.NEXT_TWELVEDATA_API_KEY
+const TD_BASE = 'https://api.twelvedata.com'
 
-async function fetchPriceAV(symbol: string): Promise<number | null> {
+async function fetchPricesTD(symbols: string[]): Promise<Record<string, number | null>> {
+  // 日本株は Twelve Data 無料枠で非対応のため除外（null を返す）
+  const usSymbols = symbols.filter((s) => detectMarket(s) === 'US')
+  const jpResult = Object.fromEntries(
+    symbols.filter((s) => detectMarket(s) === 'JP').map((s) => [s, null])
+  )
+
+  if (usSymbols.length === 0) return jpResult
+
+  const tdSymbols = usSymbols.map(toTwelvedataSymbol)
+  // TD シンボル → アプリ内シンボルの逆引きマップ
+  const tdToOriginal = Object.fromEntries(tdSymbols.map((td, i) => [td, usSymbols[i]]))
+
   try {
-    const url = `${AV_BASE}?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${AV_API_KEY}`
+    const url = `${TD_BASE}/price?symbol=${tdSymbols.join(',')}&apikey=${TD_API_KEY}`
     const res = await fetch(url, { cache: 'no-store' })
-    if (!res.ok) return null
+    if (!res.ok) return { ...jpResult, ...Object.fromEntries(usSymbols.map((s) => [s, null])) }
+
     const data = await res.json()
-    // Rate limit or quota exceeded
-    if (data['Note'] || data['Information']) {
-      console.warn('Alpha Vantage rate limit hit:', data['Note'] ?? data['Information'])
-      return null
+    const result: Record<string, number | null> = {}
+
+    if (usSymbols.length === 1) {
+      // 単一シンボル: {"price": "150.00"} または {"code": 400, "status": "error"}
+      result[usSymbols[0]] = data.price ? parseFloat(data.price) : null
+    } else {
+      // 複数シンボル: {"AAPL": {"price": "150.00"}, "TSLA": {"price": "200.00"}, ...}
+      for (const [tdSym, entry] of Object.entries(data)) {
+        const originalSym = tdToOriginal[tdSym]
+        if (!originalSym) continue
+        const e = entry as Record<string, unknown>
+        result[originalSym] = e.price ? parseFloat(e.price as string) : null
+      }
     }
-    const price = data['Global Quote']?.['05. price']
-    return price ? parseFloat(price) : null
+
+    // バッチでエラーになったシンボルを null で補完
+    for (const sym of usSymbols) {
+      if (!(sym in result)) result[sym] = null
+    }
+
+    return { ...jpResult, ...result }
   } catch (e) {
-    console.error('Alpha Vantage fetch error:', e)
-    return null
+    console.error('Twelve Data fetch error:', e)
+    return { ...jpResult, ...Object.fromEntries(usSymbols.map((s) => [s, null])) }
   }
 }
 
@@ -36,25 +63,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ prices: {}, source: 'none' })
   }
 
-  if (!AV_API_KEY) {
+  if (!TD_API_KEY) {
     return NextResponse.json(
-      { error: 'NEXT_ALPHAVANTAGE_API_KEY is not set' },
+      { error: 'NEXT_TWELVEDATA_API_KEY is not set' },
       { status: 503 }
     )
   }
 
-  // Alpha Vantage: free tier = 25 req/day, 5 req/min
-  // サーバーレス環境のタイムアウトを考慮し、1バッチ（5銘柄）のみ処理する。
-  // 超過分は prices に含めないが truncated: true で呼び出し元に通知する。
-  const BATCH = 5
-  const batch = symbols.slice(0, BATCH)
-  const truncated = symbols.length > BATCH
-
-  const results = await Promise.all(batch.map(fetchPriceAV))
-  const prices: Record<string, number | null> = {}
-  batch.forEach((sym, idx) => {
-    prices[sym] = results[idx]
-  })
-
-  return NextResponse.json({ prices, source: 'alphavantage', truncated })
+  const prices = await fetchPricesTD(symbols)
+  return NextResponse.json({ prices, source: 'twelvedata' })
 }
