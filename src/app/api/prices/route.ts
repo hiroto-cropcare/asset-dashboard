@@ -1,54 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { execFile } from 'child_process'
-import path from 'path'
+import { SYMBOL_RE } from '@/lib/symbols'
+
+const AV_API_KEY = process.env.NEXT_ALPHAVANTAGE_API_KEY
+const AV_BASE = 'https://www.alphavantage.co/query'
+
+async function fetchPriceAV(symbol: string): Promise<number | null> {
+  try {
+    const url = `${AV_BASE}?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${AV_API_KEY}`
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) return null
+    const data = await res.json()
+    // Rate limit or quota exceeded
+    if (data['Note'] || data['Information']) {
+      console.warn('Alpha Vantage rate limit hit:', data['Note'] ?? data['Information'])
+      return null
+    }
+    const price = data['Global Quote']?.['05. price']
+    return price ? parseFloat(price) : null
+  } catch (e) {
+    console.error('Alpha Vantage fetch error:', e)
+    return null
+  }
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const symbolsParam = searchParams.get('symbols') ?? ''
-  const SYMBOL_RE = /^[A-Z0-9.\-]{1,20}$/
   const symbols = symbolsParam
     .split(',')
     .map((s) => s.trim().toUpperCase())
     .filter((s) => s.length > 0 && SYMBOL_RE.test(s))
-    .slice(0, 50) // 最大50銘柄
+    .slice(0, 50)
 
   if (symbols.length === 0) {
-    return NextResponse.json({ prices: {}, source: 'mock' })
+    return NextResponse.json({ prices: {}, source: 'none' })
   }
 
-  const scriptPath = path.join(process.cwd(), 'scripts', 'fetch_prices.py')
-
-  try {
-    const prices = await new Promise<Record<string, number | null>>(
-      (resolve, reject) => {
-        execFile(
-          'python3',
-          [scriptPath, ...symbols],
-          { timeout: 30000 },
-          (error, stdout, stderr) => {
-            if (error) {
-              reject(error)
-              return
-            }
-            try {
-              const result = JSON.parse(stdout.trim())
-              resolve(result)
-            } catch {
-              console.error('Failed to parse Python output:', stdout, stderr)
-              reject(new Error('Failed to parse price data'))
-            }
-          }
-        )
-      }
+  if (!AV_API_KEY) {
+    return NextResponse.json(
+      { error: 'NEXT_ALPHAVANTAGE_API_KEY is not set' },
+      { status: 503 }
     )
-
-    return NextResponse.json({ prices, source: 'yfinance' })
-  } catch {
-    // Python unavailable or errored — return all null with mock source
-    const nullPrices: Record<string, null> = {}
-    for (const sym of symbols) {
-      nullPrices[sym] = null
-    }
-    return NextResponse.json({ prices: nullPrices, source: 'mock' })
   }
+
+  // Alpha Vantage: free tier = 25 req/day, 5 req/min
+  // サーバーレス環境のタイムアウトを考慮し、1バッチ（5銘柄）のみ処理する。
+  // 超過分は prices に含めないが truncated: true で呼び出し元に通知する。
+  const BATCH = 5
+  const batch = symbols.slice(0, BATCH)
+  const truncated = symbols.length > BATCH
+
+  const results = await Promise.all(batch.map(fetchPriceAV))
+  const prices: Record<string, number | null> = {}
+  batch.forEach((sym, idx) => {
+    prices[sym] = results[idx]
+  })
+
+  return NextResponse.json({ prices, source: 'alphavantage', truncated })
 }

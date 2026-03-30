@@ -7,7 +7,7 @@ import type { PortfolioData, DashboardSummary } from '@/types'
 import { calcSummary } from '@/lib/calc'
 import { sampleData } from '@/lib/sampleData'
 import { supabase } from '@/lib/supabase'
-import { loadPortfolio, savePortfolio } from '@/lib/db'
+import { loadPortfolio, savePortfolio, migrateLocalToSupabase } from '@/lib/db'
 import ToastNotifications from '@/components/ToastNotifications'
 import SummaryCards from '@/components/SummaryCards'
 import StockTable from '@/components/StockTable'
@@ -43,7 +43,7 @@ export default function DashboardPage() {
   const [loaded, setLoaded] = useState(false)
   const [showSectorChart, setShowSectorChart] = useState(true)
   const [updateKey, setUpdateKey] = useState(0)
-  const [updateSource, setUpdateSource] = useState<'yfinance' | 'mock' | null>(null)
+  const [updateSource, setUpdateSource] = useState<'alphavantage' | 'yfinance' | 'mock' | null>(null)
   const [user, setUser] = useState<User | null>(null)
 
   // 初期化: 匿名ログイン → データ読み込み
@@ -82,9 +82,14 @@ export default function DashboardPage() {
 
     init()
 
-    // 認証状態の変化を監視（メール確認後など）
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
+    // 認証状態の変化を監視（メール確認後のリダイレクト時など）
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      const u = session?.user ?? null
+      setUser(u)
+      // メール確認後に自動サインインされた際、ローカルデータをSupabaseへ移行する
+      if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && u && !u.is_anonymous) {
+        await migrateLocalToSupabase(u.id)
+      }
     })
 
     return () => subscription.unsubscribe()
@@ -116,7 +121,7 @@ export default function DashboardPage() {
       const res = await fetch(`/api/prices?${params.toString()}`)
       const data = await res.json() as {
         prices: Record<string, number | null>
-        source: 'yfinance' | 'mock'
+        source: 'alphavantage' | 'yfinance' | 'mock'
       }
 
       const now = new Date().toISOString()
@@ -240,14 +245,12 @@ export default function DashboardPage() {
             {updateSource && (
               <span
                 className={`text-xs ${
-                  updateSource === 'yfinance'
-                    ? 'text-accent'
-                    : 'text-text-muted'
+                  updateSource === 'mock' ? 'text-text-muted' : 'text-accent'
                 }`}
               >
-                {updateSource === 'yfinance'
-                  ? '✓ yfinance から取得'
-                  : '※ モックデータ'}
+                {updateSource === 'alphavantage' && '✓ Alpha Vantage から取得'}
+                {updateSource === 'yfinance' && '✓ yfinance から取得'}
+                {updateSource === 'mock' && '※ モックデータ'}
               </span>
             )}
             <AuthBar user={user} onUserChange={setUser} />
@@ -356,7 +359,7 @@ export default function DashboardPage() {
 
       {/* Footer */}
       <footer className="mt-12 border-t border-panel py-4 text-center text-xs text-text-muted">
-        Asset Dashboard — {user && !user.is_anonymous ? `${user.email} でログイン中` : 'データはクラウドに同期されます'}
+        Asset Dashboard — {user && !user.is_anonymous ? `${user.email} でログイン中` : 'ログインするとデータがクラウドに同期されます'}
       </footer>
     </div>
   )
